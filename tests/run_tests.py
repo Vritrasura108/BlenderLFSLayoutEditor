@@ -16,6 +16,7 @@ BLEND_FILE = os.path.join(REPO_DIR, "lyt_editor.blend")
 
 TESTS = [
     os.path.join(REPO_DIR, "tests", "test_blend_scripts.py"),
+    os.path.join(REPO_DIR, "tests", "test_export_import_roundtrip.py"),
 ]
 
 

@@ -8,3 +8,4 @@
 *.blend8
 *.blend9
 config.ini
+__pycache__/

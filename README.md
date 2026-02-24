@@ -36,6 +36,7 @@ After editing a script externally, reload it inside Blender's text editor with *
 | Script | Description |
 | ------ | ----------- |
 | `duplicate_along_curve.py` | Duplicate objects along a curve without deformation |
+| `lfs_lyt_common.py` | Shared constants, lookup tables, and encode/decode helpers |
 | `lfs_lyt_export.py` | Export Blender scene to LFS .lyt layout file |
 | `lfs_lyt_import.py` | Import LFS .lyt layout file into Blender |
 | `lfs_normalize_object.py` | Snap object positions/rotations to LFS grid |
@@ -50,9 +51,23 @@ Run the headless validation tests:
 python tests/run_tests.py
 ```
 
-This verifies all scripts are correctly linked in the blend file, match their files on disk, and compile without errors.
+This verifies all scripts are correctly linked in the blend file, match their files on disk, and compile without errors. It also runs a roundtrip export/import test across all 443 library objects.
 
 ## Changelog
+
+### v21.1
+
+- Created `scripts/lfs_lyt_common.py` — shared module eliminating ~700 lines of duplicated code between export and import (constants, lookup tables, encode/decode helpers, colour maps)
+- Refactored `lfs_lyt_export.py` — imports from common module, extracted callable `export_to_lyt()` function, standalone execution guarded with `if __name__ == "__main__"`
+- Refactored `lfs_lyt_import.py` — imports from common module, extracted callable `import_from_lyt()` and `resolve_object_name()`, standalone execution guarded with `if __name__ == "__main__"`
+- Fixed import naming bugs:
+  - Slab/Ramp: width and length parameters were swapped
+  - SpeedHump: indices 128/129 were swapped (10m ↔ 6m)
+  - Letter boards: floating bit mask was `0x7F` instead of `0x3F`
+  - Concrete object zero-padding now matches library conventions (sizes 3-digit, heights 3-digit, pitches 2-digit)
+- Added roundtrip test (`tests/test_export_import_roundtrip.py`) — exports all library objects, reimports, and verifies byte-identical output; reports any missing library models
+- Added `tests/_refresh_blend_texts.py` and `tests/_dump_pieces.py` helper scripts
+- Added `LFS_Pieces_audit.md` documenting collection structure issues and verified naming conventions
 
 ### v21.0
 
