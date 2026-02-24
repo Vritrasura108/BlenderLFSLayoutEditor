@@ -477,7 +477,11 @@ def import_from_lyt(lyt_path, collection):
     created_objects = []
 
     with open(lyt_path, "rb") as f:
-        header = struct.unpack("<6sBBHBB", f.read(12))
+        header_data = f.read(12)
+        if len(header_data) < 12:
+            raise RuntimeError(f"LYT file too short ({len(header_data)} bytes, need at least 12)")
+
+        header = struct.unpack("<6sBBHBB", header_data)
         magic = header[0]
         version = header[1]
         revision = header[2]
@@ -485,11 +489,27 @@ def import_from_lyt(lyt_path, collection):
 
         if magic != b"LFSLYT":
             raise RuntimeError("Not a valid LFS .LYT file (bad magic)")
+        if version > 0:
+            raise RuntimeError(f"Unsupported LYT version {version} (expected 0)")
+        if revision > 252:
+            raise RuntimeError(f"Unsupported LYT revision {revision} (expected <= 252)")
+
+        # Validate object count against actual file size
+        file_size = f.seek(0, 2)
+        f.seek(12)
+        available_objects = (file_size - 12) // 8
+        if objCount > available_objects:
+            print(f"WARNING: Header claims {objCount} objects but file only has data for {available_objects} (file may be truncated)")
+            objCount = available_objects
 
         print(f"Importing {objCount} objects from {lyt_path} (ver={version}, rev={revision})")
 
         for i in range(objCount):
-            objitems = struct.unpack("<hhBBBB", f.read(8))
+            raw = f.read(8)
+            if len(raw) < 8:
+                print(f"WARNING: Unexpected EOF at object {i+1}/{objCount}, stopping import")
+                break
+            objitems = struct.unpack("<hhBBBB", raw)
 
             x = objitems[0] / 16.0
             y = objitems[1] / 16.0
