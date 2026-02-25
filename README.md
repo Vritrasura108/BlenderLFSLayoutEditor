@@ -9,8 +9,10 @@ Before using the editor, create a `config.ini` file with your LFS installation p
 You can either run the interactive setup script:
 
 ```bash
-python run_first_time.py
+python scripts/run_first_time.py
 ```
+
+You can also run it from blender.
 
 Or create `config.ini` manually in the project root:
 

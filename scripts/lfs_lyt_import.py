@@ -36,6 +36,7 @@ from lfs_lyt_common import (
     MARKER_CORNER_FLAGS_TO_NAME, MARKER_DISTANCE_FLAGS_TO_NAME,
     KERB_COLOUR_MAP,
 )
+from lfs_library_loader import ensure_object, ensure_objects
 
 # --------------------------
 # Helpers
@@ -45,12 +46,21 @@ missing_library_objects = []
 def get_library_object_or_placeholder(name: str, placeholder_name: str = "Block_00_00"):
     """
     Returns (obj, used_placeholder_bool).
+    Checks bpy.data.objects first, then loads from external library.
     """
     if name in bpy.data.objects:
         return bpy.data.objects[name], False
 
+    # Try loading from external library
+    if ensure_object(name):
+        return bpy.data.objects[name], False
+
     if name not in missing_library_objects:
         missing_library_objects.append(name)
+
+    # Try placeholder (also from library if needed)
+    if placeholder_name not in bpy.data.objects:
+        ensure_object(placeholder_name)
 
     if placeholder_name in bpy.data.objects:
         print(f"Missing library object: '{name}' -> using placeholder '{placeholder_name}'")
@@ -504,13 +514,26 @@ def import_from_lyt(lyt_path, collection):
 
         print(f"Importing {objCount} objects from {lyt_path} (ver={version}, rev={revision})")
 
+        # Pass 1: read all records and collect needed library names
+        records = []
         for i in range(objCount):
             raw = f.read(8)
             if len(raw) < 8:
                 print(f"WARNING: Unexpected EOF at object {i+1}/{objCount}, stopping import")
                 break
-            objitems = struct.unpack("<hhBBBB", raw)
+            records.append(struct.unpack("<hhBBBB", raw))
 
+        needed_names = set()
+        for objitems in records:
+            _, lib_name, _, _ = resolve_object_name(objitems[4], objitems[3], objitems[5])
+            needed_names.add(lib_name)
+        needed_names.add("Block_00_00")  # placeholder
+
+        # Batch-load all needed objects from external library in one open
+        ensure_objects(list(needed_names))
+
+        # Pass 2: create objects from cached library data
+        for i, objitems in enumerate(records):
             x = objitems[0] / 16.0
             y = objitems[1] / 16.0
             z = objitems[2] / 4.0
@@ -522,7 +545,7 @@ def import_from_lyt(lyt_path, collection):
             deg = ((heading_byte * 360) / 256) - 180
             rad = deg * math.pi / 180.0
 
-            print(f"Parsing [{i+1:04d}/{objCount}] X={x:.3f} Y={y:.3f} Z={z:.3f} Flags=0x{flags:02X} Index={index} Head={deg:.1f}")
+            print(f"Parsing [{i+1:04d}/{len(records)}] X={x:.3f} Y={y:.3f} Z={z:.3f} Flags=0x{flags:02X} Index={index} Head={deg:.1f}")
 
             objectName, lib_name, postRename, skip_rotation = resolve_object_name(index, flags, heading_byte)
 

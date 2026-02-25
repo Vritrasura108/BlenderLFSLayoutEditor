@@ -1,4 +1,6 @@
 import bpy
+import os
+import sys
 import re
 import math
 from mathutils import Vector
@@ -11,6 +13,11 @@ from bpy.props import (
     BoolProperty,
     PointerProperty,
 )
+
+# Ensure scripts/ is on sys.path so lfs_library_loader can be imported
+_scripts_dir = os.path.join(os.path.dirname(bpy.data.filepath), "scripts")
+if _scripts_dir not in sys.path:
+    sys.path.insert(0, _scripts_dir)
 
 bl_info = {
     "name": "LFS Text Builder",
@@ -178,6 +185,24 @@ def _build_library_lookup_from_scene(family: str, colour_name: str):
             s = score_match(bn, candidates)
             if s > best[token][0]:
                 best[token] = (s, obj)
+
+    # If not all tokens found locally, also search external library
+    missing_tokens = [t for t, (s, _obj) in best.items() if s == 0]
+    if missing_tokens:
+        try:
+            from lfs_library_loader import get_all_objects_by_pattern
+            lib_objects = get_all_objects_by_pattern(family_ok, colour_ok)
+            for obj in lib_objects:
+                if obj.type != "MESH":
+                    continue
+                bn = _base_name(obj.name)
+                for token in tokens:
+                    candidates = digit_aliases.get(token, [token])
+                    s = score_match(bn, candidates)
+                    if s > best[token][0]:
+                        best[token] = (s, obj)
+        except ImportError:
+            pass  # Library loader not available (older setup)
 
     for token, (s, obj) in best.items():
         if obj is not None and s > 0:

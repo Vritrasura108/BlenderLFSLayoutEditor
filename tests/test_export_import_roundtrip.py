@@ -27,6 +27,7 @@ if SCRIPTS_DIR not in sys.path:
 
 from lfs_lyt_export import export_to_lyt, name2blockid, name2flags
 from lfs_lyt_import import import_from_lyt, missing_library_objects
+from lfs_library_loader import get_all_library_names, ensure_objects
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -64,31 +65,93 @@ def clear_collection(coll):
         bpy.data.objects.remove(obj, do_unlink=True)
 
 
+PREFIX_TO_SUBCOLLECTION = [
+    ("SlabWall_", "SlabWall"), ("ShortSlabWall_", "ShortSlabWall"),
+    ("Slab_", "Slab"), ("Wedge_", "Wedge"), ("Pillar_", "Pillar"),
+    ("RampWall_", "RampWall"), ("Wall_", "Wall"),
+    ("Armco_", "Armco"), ("Bale", "Bale"),
+    ("Banner", "Banner"), ("BarrierLong", "Barrier"), ("BarrierRed", "Barrier"),
+    ("BarrierWhite", "Barrier"), ("Railing", "Barrier"),
+    ("Chalk", "Chalk"), ("Cone", "Cone"), ("Marker", "Marker"),
+    ("Tyre", "Tyre"), ("Sign_", "Sign"), ("Chevron_", "Sign"),
+    ("SpeedHump", "speedhump"), ("Post_", "Post"), ("Marquee_", "Post"),
+    ("Bin1_", "Post"), ("Bin2_", "Post"),
+    ("Ramp_", "Ramp"), ("Ramp1", "Ramp"), ("Ramp2", "Ramp"),
+    ("Checkpoint", "Control"), ("FinishLine", "Control"),
+    ("AutocrossStart", "Control"), ("StartPosition", "Control"),
+    ("PitStartPoint", "Control"), ("PitStopBox", "Control"),
+    ("RouteChecker", "Control"), ("RestrictedArea", "Control"),
+    ("InSimCheckpoint", "Control"), ("InSimCircle", "Control"),
+    ("StartLights", "Control"),
+    ("Kerb_", "Kerb"), ("Letter_Board", "Letter_Board"),
+    ("Paint_", "Paint"),
+]
+
+
+def _infer_subcollection(base_name):
+    """Infer the subcollection name from an object's base name."""
+    for prefix, sub in PREFIX_TO_SUBCOLLECTION:
+        if base_name.startswith(prefix):
+            return sub
+    return "Unknown"
+
+
+def _filter_exportable(name):
+    """Return True if an object with this name can be exported in the roundtrip."""
+    base_name = name.split(".")[0]
+    if any(base_name.startswith(p) for p in SKIP_PREFIXES):
+        return False
+    try:
+        name2blockid(name)
+        name2flags(name)
+    except (IndexError, ValueError, KeyError):
+        print(f"  SKIP {name} (template / cannot export)")
+        return False
+    sub = _infer_subcollection(base_name)
+    return sub in SUBCOLLECTIONS
+
+
 def collect_library_objects():
-    """Walk 'LFS Pieces' subcollections and return list of (subcoll_name, obj)."""
+    """Walk 'LFS Pieces' subcollections and return list of (subcoll_name, obj).
+    Falls back to external library file if collection not in scene."""
     pieces = bpy.data.collections.get("LFS Pieces")
-    if pieces is None:
-        print("ERROR: 'LFS Pieces' collection not found in blend file")
+    if pieces is not None:
+        results = []
+        for subcoll in pieces.children:
+            if subcoll.name not in SUBCOLLECTIONS:
+                continue
+            for obj in subcoll.objects:
+                base_name = obj.name.split(".")[0]
+                if any(base_name.startswith(p) for p in SKIP_PREFIXES):
+                    continue
+                try:
+                    name2blockid(obj.name)
+                    name2flags(obj.name)
+                except (IndexError, ValueError, KeyError):
+                    print(f"  SKIP {obj.name} (template / cannot export)")
+                    continue
+                results.append((subcoll.name, obj))
+        return results
+
+    # Fallback: load from external library file
+    all_names = get_all_library_names()
+    if not all_names:
+        print("ERROR: 'LFS Pieces' collection not found and external library is empty or missing")
         sys.exit(1)
 
+    print(f"Loading {len(all_names)} objects from external library...")
+    ensure_objects(all_names)
+
     results = []
-    for subcoll in pieces.children:
-        if subcoll.name not in SUBCOLLECTIONS:
+    for name in all_names:
+        if name not in bpy.data.objects:
             continue
-        for obj in subcoll.objects:
-            base_name = obj.name.split(".")[0]
-            if any(base_name.startswith(p) for p in SKIP_PREFIXES):
-                continue
-            # Verify the object can actually be exported (has enough name
-            # fields for its type).  Template objects like "FinishLine" or
-            # "StartPosition" without parameters would crash the exporter.
-            try:
-                name2blockid(obj.name)
-                name2flags(obj.name)
-            except (IndexError, ValueError, KeyError):
-                print(f"  SKIP {obj.name} (template / cannot export)")
-                continue
-            results.append((subcoll.name, obj))
+        if not _filter_exportable(name):
+            continue
+        obj = bpy.data.objects[name]
+        base_name = name.split(".")[0]
+        sub = _infer_subcollection(base_name)
+        results.append((sub, obj))
     return results
 
 
